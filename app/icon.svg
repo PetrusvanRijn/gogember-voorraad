@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#0B0F14"/>
+  <g stroke="#C9A06A" stroke-width="4.5" stroke-linecap="square" fill="none">
+    <path d="M14 24 V16 H24"/>
+    <path d="M40 16 H50 V24"/>
+    <path d="M14 40 V48 H24"/>
+    <path d="M50 40 V48 H40"/>
+  </g>
+  <text x="32" y="34.5" fill="#F3EFE8" font-family="Inter, sans-serif" font-size="18" font-weight="700" text-anchor="middle" dominant-baseline="central" letter-spacing="-0.5">GG</text>
+</svg>
