@@ -15,7 +15,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith("/api/login")) return NextResponse.next();
+  if (pathname.startsWith("/api/login") || pathname.startsWith("/api/cron")) return NextResponse.next();
 
   if (!signedIn) {
     const login = request.nextUrl.clone();

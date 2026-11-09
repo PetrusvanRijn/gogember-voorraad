@@ -23,6 +23,8 @@ const CAVEAT: Record<CaveatCode, string> = {
   "canceled-with-label":
     "Sommige geannuleerde orders hebben toch een label en track & trace. Die pakketten tellen mee, want ze zijn verzonden.",
   "seller-not-listed": "Verkoper 38 staat niet in de lijst van deze API-sleutel. De oproep gaat toch naar verkoper 38.",
+  "history-building":
+    "Oudere dagen staan nog niet allemaal vast. Die worden in stukken opgehaald en bewaard. Vernieuw de pagina zo meteen voor een langere periode. Vandaag en gisteren worden wel opnieuw geteld.",
 };
 
 function coverText(row: StockRow): string {
@@ -133,6 +135,11 @@ export function Dashboard({ data, period }: { data: DashboardData; period: Perio
       {data.caveats.includes("missing-line-detail") ? (
         <div className="banner" data-testid="line-detail-banner">
           <p>{CAVEAT["missing-line-detail"]}</p>
+        </div>
+      ) : null}
+      {data.caveats.includes("history-building") ? (
+        <div className="banner" data-testid="history-banner">
+          <p>{CAVEAT["history-building"]}</p>
         </div>
       ) : null}
 

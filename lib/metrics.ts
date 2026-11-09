@@ -19,7 +19,8 @@ export type CaveatCode =
   | "tape-per-parcel"
   | "gember32-virtual"
   | "canceled-with-label"
-  | "seller-not-listed";
+  | "seller-not-listed"
+  | "history-building";
 
 export type UnknownCounts = {
   total: number;
@@ -78,12 +79,24 @@ type UnknownReason = "sku" | "over48" | "ambiguous";
 
 type Shipment = {
   date: string | null;
+  key: string;
   units: Units | null;
   bottles: number | null;
   box: BoxSize | null;
   unknown: UnknownReason | null;
   parcel: boolean;
+  canceled: boolean;
 };
+
+export type TrackUsage = {
+  units: Units;
+  unknown: UnknownReason | null;
+  parcel: boolean;
+  canceled: boolean;
+};
+
+/** Johannesburg day -> tracking code (or an internal key) -> combined parcel. */
+export type DailyTracks = Record<string, Record<string, TrackUsage>>;
 
 const PRODUCT_ROWS: { id: string; label: string; hint: string; sku: string; key: UnitKey }[] = [
   { id: "gember", label: "Gembersap", hint: "Losse fles · Gember", sku: "Gember", key: "gember" },
@@ -208,7 +221,8 @@ function buildShipments(orders: NormalizedOrder[], products: ParsedProduct[], li
   for (const members of groups.values()) {
     const parcels = members.flatMap((order) => shippedParcels(order));
     if (parcels.length === 0) continue;
-    if (members.some((order) => (order.status ?? "").toUpperCase() === "CANCELED")) canceledShippedOrders += 1;
+    const canceled = members.some((order) => (order.status ?? "").toUpperCase() === "CANCELED");
+    if (canceled) canceledShippedOrders += 1;
 
     const tracks = new Set(parcels.map((parcel) => parcel.carrierTrack!.trim()));
     const dates = [...new Set(parcels.map((parcel) => (parcel.createdAt ? johannesburgDate(parcel.createdAt) : "")).filter(Boolean))].sort();
@@ -257,18 +271,154 @@ function buildShipments(orders: NormalizedOrder[], products: ParsedProduct[], li
       else if ((bottles ?? 0) > 48) unknown = "over48";
     }
 
+    const trackId = tracks.size === 1 ? [...tracks][0] : "";
     const countableParcel = !structural && date != null;
+    const key = countableParcel && trackId ? trackId : `~${members.map((order) => order.id ?? "x").join("-")}`;
     shipments.push({
       date,
+      key,
       units: lineDetail ? units : null,
       bottles,
       box: lineDetail && unknown == null && date ? boxForBottles(bottles ?? 0, date) : null,
       unknown,
       parcel: countableParcel,
+      canceled,
     });
   }
 
   return { shipments, canceledShippedOrders };
+}
+
+export function collectDailyUsage(orders: NormalizedOrder[], products: ParsedProduct[]): { days: DailyTracks; lineDetail: boolean } {
+  const lineDetail = hasLineDetail(orders);
+  const { shipments } = buildShipments(orders, products, lineDetail);
+  const days: DailyTracks = {};
+  for (const shipment of shipments) {
+    if (!shipment.date) continue;
+    const bucket = days[shipment.date] ?? {};
+    bucket[shipment.key] = {
+      units: shipment.units ?? emptyUnits(),
+      unknown: shipment.unknown,
+      parcel: shipment.parcel,
+      canceled: shipment.canceled,
+    };
+    days[shipment.date] = bucket;
+  }
+  return { days, lineDetail };
+}
+
+export function tallyDaily(days: DailyTracks, averageDates: string[], lineDetail: boolean): {
+  parcelsByDay: Map<string, number>;
+  bottlesByDay: Map<string, number>;
+  summedUnits: Units;
+  summedBoxes: Record<BoxSize, number>;
+  unknown: UnknownCounts;
+  parcelsInAverage: number;
+  bottlesInAverage: number;
+  tapeInAverage: number;
+  canceledShippedOrders: number;
+} {
+  const averageSet = new Set(averageDates);
+  const parcelsByDay = new Map<string, number>();
+  const bottlesByDay = new Map<string, number>();
+  const summedUnits = emptyUnits();
+  const summedBoxes: Record<BoxSize, number> = { 6: 0, 12: 0, 30: 0, 48: 0 };
+  const unknown: UnknownCounts = { total: 0, sku: 0, over48: 0, ambiguous: 0 };
+  let parcelsInAverage = 0;
+  let bottlesInAverage = 0;
+  let tapeInAverage = 0;
+  let canceledShippedOrders = 0;
+
+  for (const [date, tracks] of Object.entries(days)) {
+    let parcels = 0;
+    let bottles = 0;
+    for (const track of Object.values(tracks)) {
+      if (track.canceled) canceledShippedOrders += 1;
+      if (!track.parcel) {
+        if (averageSet.has(date) && lineDetail && track.unknown) {
+          unknown.total += 1;
+          unknown[track.unknown] += 1;
+        }
+        continue;
+      }
+      parcels += 1;
+      const trackBottles = bottleCount(track.units);
+      if (lineDetail && track.unknown !== "ambiguous") bottles += trackBottles;
+      if (!averageSet.has(date)) continue;
+      parcelsInAverage += 1;
+      tapeInAverage += 1;
+      if (!lineDetail || track.unknown === "ambiguous") {
+        if (lineDetail && track.unknown) {
+          unknown.total += 1;
+          unknown[track.unknown] += 1;
+        }
+        continue;
+      }
+      addUnits(summedUnits, track.units, 1);
+      bottlesInAverage += trackBottles;
+      if (track.unknown) {
+        unknown.total += 1;
+        unknown[track.unknown] += 1;
+      } else {
+        const box = boxForBottles(trackBottles, date);
+        if (box) summedBoxes[box] += 1;
+      }
+    }
+    parcelsByDay.set(date, parcels);
+    bottlesByDay.set(date, bottles);
+  }
+
+  return {
+    parcelsByDay,
+    bottlesByDay,
+    summedUnits,
+    summedBoxes,
+    unknown,
+    parcelsInAverage,
+    bottlesInAverage,
+    tapeInAverage,
+    canceledShippedOrders,
+  };
+}
+
+export function mergeTrackUsage(left: TrackUsage, right: TrackUsage): TrackUsage {
+  const units = emptyUnits();
+  addUnits(units, left.units, 1);
+  addUnits(units, right.units, 1);
+  let unknown: UnknownReason | null = null;
+  if (left.unknown === "ambiguous" || right.unknown === "ambiguous") unknown = "ambiguous";
+  else if (left.unknown === "sku" || right.unknown === "sku") unknown = "sku";
+  else if (bottleCount(units) > 48) unknown = "over48";
+  return {
+    units,
+    unknown,
+    parcel: left.parcel || right.parcel,
+    canceled: left.canceled || right.canceled,
+  };
+}
+
+/** Replace today and yesterday with a fresh count. Older days stay as they were. */
+export function replaceOpenDays(base: DailyTracks, fresh: DailyTracks, dates: string[]): DailyTracks {
+  const next: DailyTracks = {};
+  for (const [date, tracks] of Object.entries(base)) {
+    if (!dates.includes(date)) next[date] = tracks;
+  }
+  for (const date of dates) next[date] = fresh[date] ?? {};
+  return next;
+}
+
+/** Fold a backfill page into closed days. Open days are left for the incremental refresh. */
+export function mergeClosedDays(base: DailyTracks, extra: DailyTracks, openFrom: string): DailyTracks {
+  const next: DailyTracks = { ...base };
+  for (const [date, tracks] of Object.entries(extra)) {
+    if (date >= openFrom) continue;
+    const bucket = { ...(next[date] ?? {}) };
+    for (const [key, track] of Object.entries(tracks)) {
+      bucket[key] = bucket[key] ? mergeTrackUsage(bucket[key], track) : track;
+    }
+    next[date] = bucket;
+  }
+  return next;
 }
 
 function observedBounds(orders: NormalizedOrder[]): { start: string | null; end: string | null } {
@@ -330,89 +480,33 @@ export function buildDashboard(input: {
   fetchedAt: string;
   /** Live fetches already cover this Johannesburg date; earlier days are real zeros. */
   coverageStart?: string | null;
+  /** When set, only these Johannesburg days count. Missing days are not treated as zero. */
+  knownDates?: string[] | null;
+  historyBuilding?: boolean;
+  /** Precomputed day tracks. Sample mode builds them from ordersPayload. */
+  daily?: DailyTracks | null;
   sellerNote?: string | null;
   sellerMissing?: boolean;
 }): Dashboard {
   const products = parseProducts(input.productsPayload);
   const orders = parseOrders(input.ordersPayload);
-  const lineDetail = hasLineDetail(orders);
-  const { shipments, canceledShippedOrders } = buildShipments(orders, products, lineDetail);
+  const collected = input.daily
+    ? { days: input.daily, lineDetail: true }
+    : collectDailyUsage(orders, products);
+  const lineDetail = collected.lineDetail;
   const anchorAt = input.mode === "sample" ? latestIso(orders, products) ?? input.fetchedAt : input.fetchedAt;
   const window = reportWindow(anchorAt, input.periodDays);
   const observed = observedBounds(orders);
 
   const averageDates = daysBetween(window.start, window.end).filter((date) => {
+    if (input.knownDates) return input.knownDates.includes(date);
     if (input.mode === "live") return !input.coverageStart || date >= input.coverageStart;
     if (!observed.start || !observed.end) return false;
     return date >= observed.start && date <= observed.end;
   });
-  const averageSet = new Set(averageDates);
-
-  const parcelsByDay = new Map<string, number>();
-  const bottlesByDay = new Map<string, number>();
-  const unitsByDay = new Map<string, Units>();
-  const boxesByDay = new Map<string, Record<BoxSize, number>>();
-  let tapeInAverage = 0;
-  const unknown: UnknownCounts = { total: 0, sku: 0, over48: 0, ambiguous: 0 };
-  let parcelsInAverage = 0;
-  let bottlesInAverage = 0;
-
-  const ensureBox = (date: string) => {
-    const current = boxesByDay.get(date) ?? { 6: 0, 12: 0, 30: 0, 48: 0 };
-    boxesByDay.set(date, current);
-    return current;
-  };
-
-  for (const shipment of shipments) {
-    if (!shipment.date) continue;
-    const inAverage = averageSet.has(shipment.date);
-    if (!shipment.parcel) {
-      if (inAverage && lineDetail && shipment.unknown) {
-        unknown.total += 1;
-        unknown[shipment.unknown] += 1;
-      }
-      continue;
-    }
-
-    parcelsByDay.set(shipment.date, (parcelsByDay.get(shipment.date) ?? 0) + 1);
-    if (lineDetail && shipment.bottles != null && shipment.unknown !== "ambiguous") {
-      bottlesByDay.set(shipment.date, (bottlesByDay.get(shipment.date) ?? 0) + shipment.bottles);
-    }
-    if (!inAverage) continue;
-
-    parcelsInAverage += 1;
-    tapeInAverage += 1;
-    if (!lineDetail || !shipment.units || shipment.bottles == null || shipment.unknown === "ambiguous") {
-      if (lineDetail && shipment.unknown) {
-        unknown.total += 1;
-        unknown[shipment.unknown] += 1;
-      }
-      continue;
-    }
-
-    const dayUnits = unitsByDay.get(shipment.date) ?? emptyUnits();
-    addUnits(dayUnits, shipment.units, 1);
-    unitsByDay.set(shipment.date, dayUnits);
-    bottlesInAverage += shipment.bottles;
-    if (shipment.unknown) {
-      unknown.total += 1;
-      unknown[shipment.unknown] += 1;
-    } else if (shipment.box) {
-      ensureBox(shipment.date)[shipment.box] += 1;
-    }
-  }
-
-  const summedUnits = emptyUnits();
-  for (const date of averageDates) {
-    const day = unitsByDay.get(date);
-    if (day) addUnits(summedUnits, day, 1);
-  }
-  const summedBoxes: Record<BoxSize, number> = { 6: 0, 12: 0, 30: 0, 48: 0 };
-  for (const date of averageDates) {
-    const day = boxesByDay.get(date);
-    if (!day) continue;
-    for (const size of [6, 12, 30, 48] as const) summedBoxes[size] += day[size];
-  }
+  const tally = tallyDaily(collected.days, averageDates, lineDetail);
+  const { parcelsByDay, bottlesByDay, summedUnits, summedBoxes, unknown } = tally;
+  const { parcelsInAverage, bottlesInAverage, tapeInAverage, canceledShippedOrders } = tally;
 
   const stock = stockIndex(products);
   const stockOf = (sku: string) => stock.get(sku.toLowerCase())?.opslag ?? null;
@@ -445,8 +539,9 @@ export function buildDashboard(input: {
     input.mode === "sample" && observed.start && observed.start > window.start ? observed.start : window.start;
   const chartDates = daysBetween(chartStart, window.chartEnd);
   const days: DayPoint[] = chartDates.map((date) => {
-    const inCoverage =
-      input.mode === "live"
+    const inCoverage = input.knownDates
+      ? input.knownDates.includes(date)
+      : input.mode === "live"
         ? !input.coverageStart || date >= input.coverageStart
         : Boolean(observed.start && observed.end && date >= observed.start && date <= observed.end);
     return {
@@ -454,7 +549,7 @@ export function buildDashboard(input: {
       parcels: inCoverage ? parcelsByDay.get(date) ?? 0 : null,
       bottles: lineDetail && inCoverage ? bottlesByDay.get(date) ?? 0 : null,
       partial: date === window.partialDate,
-      inAverage: averageSet.has(date),
+      inAverage: averageDates.includes(date),
     };
   });
 
@@ -464,6 +559,7 @@ export function buildDashboard(input: {
   if (averagedDays < input.periodDays) caveats.push("short-coverage");
   if (canceledShippedOrders > 0) caveats.push("canceled-with-label");
   if (input.sellerMissing) caveats.push("seller-not-listed");
+  if (input.historyBuilding) caveats.push("history-building");
 
   const gember = stockOf("Gember");
   const gember32 = stockOf("Gember32");
