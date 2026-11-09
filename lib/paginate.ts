@@ -9,10 +9,11 @@ export type Page<T> = {
 
 export type PaginateResult<T> = {
   items: T[];
-  /** False when the page cap or the time budget stopped the scan early. */
+  /** False when the page cap, the time budget, or a failed page stopped the scan. */
   complete: boolean;
-  /** Pass this back as startId to continue. */
+  /** Pass this back as startId. After a failed page this is the last page that succeeded, so the scan does not restart at 1. */
   nextId: number;
+  error: unknown | null;
 };
 
 export async function paginateDetailed<T extends { id?: number | null }>(
@@ -30,9 +31,16 @@ export async function paginateDetailed<T extends { id?: number | null }>(
   const items = () => [...byId.values(), ...withoutId];
 
   for (let page = 0; page < maxPages; page += 1) {
-    if (Date.now() >= deadline) return { items: items(), complete: false, nextId: idGt };
+    if (Date.now() >= deadline) return { items: items(), complete: false, nextId: idGt, error: null };
 
-    const result = await fetchPage(idGt);
+    let result: Page<T>;
+    try {
+      result = await fetchPage(idGt);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown";
+      console.error(`StockItUp page failed at id_gt=${idGt}: ${message}`);
+      return { items: items(), complete: false, nextId: idGt, error };
+    }
     for (const item of result.items) {
       if (typeof item.id === "number") {
         if (byId.has(item.id)) byId.delete(item.id);
@@ -42,17 +50,19 @@ export async function paginateDetailed<T extends { id?: number | null }>(
       }
     }
 
-    if (result.items.length === 0) return { items: items(), complete: true, nextId: idGt };
-    if (result.hasNext === false) return { items: items(), complete: true, nextId: idGt };
-    if (result.items.length < pageSize && result.hasNext !== true) return { items: items(), complete: true, nextId: idGt };
+    if (result.items.length === 0) return { items: items(), complete: true, nextId: idGt, error: null };
+    if (result.hasNext === false) return { items: items(), complete: true, nextId: idGt, error: null };
+    if (result.items.length < pageSize && result.hasNext !== true) {
+      return { items: items(), complete: true, nextId: idGt, error: null };
+    }
 
     const last = result.items[result.items.length - 1];
     const next = result.nextId ?? (typeof last?.id === "number" ? last.id : null);
-    if (next == null || next <= idGt) return { items: items(), complete: true, nextId: idGt };
+    if (next == null || next <= idGt) return { items: items(), complete: true, nextId: idGt, error: null };
     idGt = next;
   }
 
-  return { items: items(), complete: false, nextId: idGt };
+  return { items: items(), complete: false, nextId: idGt, error: null };
 }
 
 export async function paginate<T extends { id?: number | null }>(

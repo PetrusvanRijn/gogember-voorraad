@@ -42,7 +42,7 @@ Base URL: `https://his.stockitup.nl/api/v1/`
 - `GET /sellers/{id}/products/?page_size=100&id_gt=`
 - `GET /sellers/{id}/orders/?page_size=100&id_gt=&updated_since=`
 
-`updated_since` is milliseconds since the epoch. Pages advance with `id_gt` (starting at 1) until a short page comes back. A slow page is retried twice. The rendered page is cached for 15 minutes.
+`updated_since` is milliseconds since the epoch. Pages advance with `id_gt` (starting at 1). A page view waits at most about 15 seconds and then shows whatever is already stored. Product stock is cached for 10 minutes; a failed refresh keeps the previous stock and says when it was last updated. The daily cron uses a 20 second timeout, retries a timeout twice, and saves the backfill cursor after every page. Functions run in `fra1` (Frankfurt), the closest single region Hobby allows to the Netherlands.
 
 Live mode does not download the whole period on every request. One private Blob holds per-day parcel totals. Closed days are fetched once, in chunks. Today and yesterday are refreshed from `updated_since`. A daily cron at 03:15 UTC continues the backfill. Until that history is complete, longer periods say so and only count days that are already stored.
 

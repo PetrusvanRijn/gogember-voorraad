@@ -16,6 +16,16 @@ export function formatOneDecimal(value: number): string {
   return oneDecimal.format(value);
 }
 
+export function formatClock(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("nl-NL", {
+    timeZone: TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function formatTimestamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
