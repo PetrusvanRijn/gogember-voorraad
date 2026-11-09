@@ -15,7 +15,8 @@ export async function paginate<T extends { id?: number | null }>(
   const pageSize = options?.pageSize ?? PAGE_SIZE;
   const byId = new Map<number, T>();
   const withoutId: T[] = [];
-  let idGt = 0;
+  // StockItUp rejects id_gt=0. The first page starts at 1; later pages use the last id.
+  let idGt = 1;
 
   for (let page = 0; page < maxPages; page += 1) {
     const result = await fetchPage(idGt);

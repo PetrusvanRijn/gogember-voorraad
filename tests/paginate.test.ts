@@ -12,7 +12,7 @@ test("id_gt pagination stops on a short page and drops duplicate ids", async () 
     calls.push(idGt);
     return pages[calls.length - 1];
   });
-  assert.deepEqual(calls, [0, 2]);
+  assert.deepEqual(calls, [1, 2]);
   assert.deepEqual(
     all.map((item) => item.id),
     [1, 2, 3],
