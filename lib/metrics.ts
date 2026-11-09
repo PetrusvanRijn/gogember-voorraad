@@ -20,7 +20,8 @@ export type CaveatCode =
   | "gember32-virtual"
   | "canceled-with-label"
   | "seller-not-listed"
-  | "history-building";
+  | "history-building"
+  | "stock-stale";
 
 export type UnknownCounts = {
   total: number;
@@ -72,6 +73,7 @@ export type Dashboard = {
   canceledShippedOrders: number;
   caveats: CaveatCode[];
   sellerNote: string | null;
+  stockStale: boolean;
 };
 
 type BoxSize = 6 | 12 | 30 | 48;
@@ -483,6 +485,7 @@ export function buildDashboard(input: {
   /** When set, only these Johannesburg days count. Missing days are not treated as zero. */
   knownDates?: string[] | null;
   historyBuilding?: boolean;
+  stockStale?: boolean;
   /** Precomputed day tracks. Sample mode builds them from ordersPayload. */
   daily?: DailyTracks | null;
   sellerNote?: string | null;
@@ -560,6 +563,7 @@ export function buildDashboard(input: {
   if (canceledShippedOrders > 0) caveats.push("canceled-with-label");
   if (input.sellerMissing) caveats.push("seller-not-listed");
   if (input.historyBuilding) caveats.push("history-building");
+  if (input.stockStale) caveats.push("stock-stale");
 
   const gember = stockOf("Gember");
   const gember32 = stockOf("Gember32");
@@ -600,5 +604,6 @@ export function buildDashboard(input: {
     canceledShippedOrders,
     caveats,
     sellerNote: input.sellerNote ?? null,
+    stockStale: input.stockStale === true,
   };
 }

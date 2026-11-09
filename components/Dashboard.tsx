@@ -1,5 +1,5 @@
 import { PERIODS, RED_BELOW_DAYS, ORANGE_BELOW_DAYS, type Period } from "@/lib/config";
-import { formatDayLabel, formatInt, formatOneDecimal, formatStock, formatTimestamp } from "@/lib/format";
+import { formatClock, formatDayLabel, formatInt, formatOneDecimal, formatStock, formatTimestamp } from "@/lib/format";
 import type { CaveatCode, Dashboard as DashboardData, Flag, StockRow } from "@/lib/metrics";
 import { UsageChart } from "./Chart";
 import { Logo } from "./Logo";
@@ -24,7 +24,8 @@ const CAVEAT: Record<CaveatCode, string> = {
     "Sommige geannuleerde orders hebben toch een label en track & trace. Die pakketten tellen mee, want ze zijn verzonden.",
   "seller-not-listed": "Verkoper 38 staat niet in de lijst van deze API-sleutel. De oproep gaat toch naar verkoper 38.",
   "history-building":
-    "Oudere dagen staan nog niet allemaal vast. Die worden in stukken opgehaald en bewaard. Vernieuw de pagina zo meteen voor een langere periode. Vandaag en gisteren worden wel opnieuw geteld.",
+    "Oudere dagen staan nog niet allemaal vast. Die worden in stukken opgehaald en bewaard. Vernieuw de pagina zo meteen voor een langere periode.",
+  "stock-stale": "De voorraad kon nu niet opnieuw worden opgehaald.",
 };
 
 function coverText(row: StockRow): string {
@@ -101,7 +102,6 @@ export function Dashboard({ data, period }: { data: DashboardData; period: Perio
           <strong data-testid="updated">{formatTimestamp(updated)}</strong>
           <span>
             {data.mode === "sample" ? "Voorbeelddata" : "Live"}
-            {data.mode === "live" ? " · cache 15 min" : ""}
           </span>
           <form action="/api/logout" method="post">
             <button className="logout" type="submit">
@@ -140,6 +140,15 @@ export function Dashboard({ data, period }: { data: DashboardData; period: Perio
       {data.caveats.includes("history-building") ? (
         <div className="banner" data-testid="history-banner">
           <p>{CAVEAT["history-building"]}</p>
+        </div>
+      ) : null}
+      {data.stockStale ? (
+        <div className="banner" data-testid="stock-stale">
+          <p>
+            {data.stockUpdatedAt
+              ? `Voorraad bijgewerkt om ${formatClock(data.stockUpdatedAt)}.`
+              : "Voorraad kon niet worden opgehaald."}
+          </p>
         </div>
       ) : null}
 
