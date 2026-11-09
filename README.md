@@ -30,7 +30,7 @@ npm run build
 
 Never commit real credentials and never expose them to the browser. `.env.local` is gitignored.
 
-The fixtures are a sanitized StockItUp export for seller 38. Customer fields were removed before they were committed. Order lines in that export only kept `status` (no SKU, quantity or title), so sample mode can show stock and parcels but not bottle usage. Live mode reads the full objects.
+The fixtures are a sanitized StockItUp export for seller 38. Customer names and addresses were removed before they were committed. `data/sample-orders.json` is 13,403 orders updated in the last 30 days. Some of those orders were placed as far back as 2024; usage only counts a shipped parcel whose Johannesburg day falls inside the selected period. Live mode reads the same order fields: `product_sku`, `product_title`, `quantity_ordered`, `quantity_canceled`, and `parcels[]`.
 
 ## StockItUp
 
@@ -70,13 +70,12 @@ Tape is counted as one per shipped parcel. If the tape stock is stored as rolls 
 
 ## Sample-data limits
 
-Checked against `data/sample-products.json` and `data/sample-orders.json` (stock snapshot around 08:53 Johannesburg on 9 November 2026):
+Checked against `data/sample-products.json` and `data/sample-orders.json` (stock snapshot around 08:53 Johannesburg on 9 November 2026). The 7-day average is 2–8 November. 9 November is still morning and is left out.
 
-- Physical stock is real: gember 28,150; appel-citroen 4,809; granaatappel 17,138; shot glasses 1,223; coasters 4.
-- Packaging stock is real, including separators for 30 and 48 and box 6 (1,980). An older note that those separators were missing is out of date.
-- The order file has 1,754 unique shipped parcels. Order lines do not include SKU or quantity, so bottle, box and separator usage stays “geen data” in sample mode.
-- Over the last 7 complete days (2–8 November) there are 1,463 parcels, 209 per day. Tape cover is about 2.0 days if one tape unit is used per parcel.
-- 9 November only runs to about 09:00 and is excluded from the average (36 parcels that morning).
-- Volume before 1 November is much lower than the first week of November. A 28-day or half-year average in this file only has 17 complete days (23 October–8 November) and should not be read as a full month.
-- Five cancelled orders still carry a label and tracking code. They are included, because the parcel went out. None of them fall in the 7-day window above.
+- Physical stock: gember 28,150 (about 17.3 days, orange); appel-citroen 4,809 (about 13.4 days, red); granaatappel 17,138; shot glasses 1,223 (about 6.3 days, red); coasters 4 (about 1.5 days, red).
+- Box 12: 10,810 in stock, 1,176 used, 168 per day, about 64.3 days of cover. Separator 12 matches that usage (25,090 in stock, about 149.3 days).
+- The extract’s first orders are 23 October, so 28 days and half a year are not a full period. Over the 17 days that are present, box 12 usage is 3,935 (about 231 per day).
+- Lines with an empty SKU and title (about 1% of items) are skipped. One parcel in the 7-day window has two tracking codes and is counted as unknown, with no guessed box.
+- A handful of cancelled orders still have a label and tracking code. Those parcels count.
 - StockItUp’s virtual stock for `Gember32` divides by 32. Shipped bottles are counted as 16, matching the product title.
+- Tape is one unit per parcel, so its cover is about 2 days. Ignore that row if the stock is stored in rolls.

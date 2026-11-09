@@ -107,7 +107,8 @@ export function extractList(payload: unknown, keys: string[]): unknown[] {
   return [];
 }
 
-const QTY_KEYS = ["quantity", "qty", "amount", "count", "quantity_ordered", "ordered_quantity"];
+// Live StockItUp order lines use product_sku, product_title, quantity_ordered and quantity_canceled.
+const QTY_KEYS = ["quantity_ordered", "quantity", "qty", "amount", "count", "ordered_quantity"];
 const CANCEL_KEYS = [
   "cancelled",
   "canceled",

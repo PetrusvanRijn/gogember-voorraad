@@ -128,7 +128,7 @@ async function load(periodDays: number, mode: "sample" | "live"): Promise<Dashbo
   });
 }
 
-const cachedLoad = unstable_cache(load, ["gogember-voorraad-v2"], { revalidate: CACHE_SECONDS });
+const cachedLoad = unstable_cache(load, ["gogember-voorraad-v3"], { revalidate: CACHE_SECONDS });
 
 export function getDashboard(periodDays: number): Promise<Dashboard> {
   return cachedLoad(periodDays, sampleDataEnabled() ? "sample" : "live");

@@ -231,7 +231,10 @@ function buildShipments(orders: NormalizedOrder[], products: ParsedProduct[], li
           }
           if (line.quantity === 0) continue;
           const sku = resolveSku(line.sku, line.title, titles);
+          // About 1% of StockItUp lines have no sku and no title. Skip them.
+          // A sku we do not recognise still makes the parcel's box unknown.
           if (!sku) {
+            if (!line.sku && !line.title) continue;
             lineProblem = true;
             continue;
           }

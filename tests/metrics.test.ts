@@ -18,7 +18,7 @@ test("every catalogue SKU has an explicit bottle rule", () => {
   }
 });
 
-test("sample snapshot: physical stock, parcels and no invented bottle usage", () => {
+test("sample snapshot: stock and days of cover from shipped parcels in the window", () => {
   const data = buildDashboard({
     productsPayload,
     ordersPayload,
@@ -31,41 +31,39 @@ test("sample snapshot: physical stock, parcels and no invented bottle usage", ()
   assert.equal(data.windowEnd, "2026-11-08");
   assert.equal(data.partialDate, "2026-11-09");
   assert.equal(data.averagedDays, 7);
-  assert.equal(data.chartUnit, "pakketten");
-  assert.equal(data.parcelsInAverage, 1463);
-  assert.equal(data.bottlesInAverage, null);
-  assert.equal(data.unknown, null);
-  assert.ok(data.caveats.includes("missing-line-detail"));
+  assert.equal(data.chartUnit, "flessen");
+  assert.equal(data.parcelsInAverage, 1471);
+  assert.equal(data.bottlesInAverage, 16049);
+  assert.equal(data.unknown?.total, 1);
+  assert.equal(data.unknown?.ambiguous, 1);
+  assert.ok(!data.caveats.includes("missing-line-detail"));
   assert.ok(data.caveats.includes("gember32-virtual"));
-  assert.equal(data.canceledShippedOrders, 5);
 
   assert.equal(row(data, "gember")?.stock, 28150);
-  assert.equal(row(data, "appel")?.stock, 4809);
-  assert.equal(row(data, "granaat")?.stock, 17138);
-  assert.equal(row(data, "shot")?.stock, 1223);
-  assert.equal(row(data, "onderzetter")?.stock, 4);
-  assert.equal(row(data, "box6")?.stock, 1980);
+  assert.equal(row(data, "gember")?.used, 11371);
+  assert.ok(Math.abs((row(data, "gember")?.avgPerDay ?? 0) - 11371 / 7) < 1e-9);
+  assert.ok(Math.abs((row(data, "gember")?.daysOfCover ?? 0) - 28150 / (11371 / 7)) < 1e-6);
+  assert.equal(row(data, "gember")?.flag, "orange");
+
   assert.equal(row(data, "box12")?.stock, 10810);
-  assert.equal(row(data, "box30")?.stock, 770);
-  assert.equal(row(data, "box48")?.stock, 590);
-  assert.equal(row(data, "sep6")?.stock, 9900);
+  assert.equal(row(data, "box12")?.used, 1176);
+  assert.equal(row(data, "box12")?.avgPerDay, 168);
+  assert.ok(Math.abs((row(data, "box12")?.daysOfCover ?? 0) - 10810 / 168) < 1e-6);
+  assert.equal(row(data, "box12")?.flag, "ok");
+
   assert.equal(row(data, "sep12")?.stock, 25090);
-  assert.equal(row(data, "sep30")?.stock, 1740);
-  assert.equal(row(data, "sep48")?.stock, 825);
-  assert.equal(row(data, "tape")?.stock, 408);
+  assert.equal(row(data, "sep12")?.used, 1176);
+  assert.equal(row(data, "sep12")?.avgPerDay, 168);
+  assert.ok(Math.abs((row(data, "sep12")?.daysOfCover ?? 0) - 25090 / 168) < 1e-6);
 
-  for (const id of ["gember", "appel", "granaat", "shot", "onderzetter", "box6", "box12", "sep12"]) {
-    assert.equal(row(data, id)?.flag, "unknown");
-    assert.equal(row(data, id)?.avgPerDay, null);
-  }
+  assert.equal(row(data, "appel")?.stock, 4809);
+  assert.equal(row(data, "appel")?.flag, "red");
+  assert.equal(row(data, "onderzetter")?.stock, 4);
+  assert.equal(row(data, "onderzetter")?.flag, "red");
+  assert.equal(row(data, "tape")?.used, 1471);
+  assert.equal(row(data, "tape")?.flag, "red");
 
-  const tape = row(data, "tape");
-  assert.equal(tape?.used, 1463);
-  assert.equal(tape?.avgPerDay, 209);
-  assert.ok(Math.abs((tape?.daysOfCover ?? 0) - 408 / 209) < 1e-9);
-  assert.equal(tape?.flag, "red");
-
-  const byDate = Object.fromEntries(data.days.map((day) => [day.date, day.parcels]));
+  const byDate = Object.fromEntries(data.days.filter((day) => day.inAverage).map((day) => [day.date, day.parcels]));
   assert.deepEqual(byDate, {
     "2026-11-02": 364,
     "2026-11-03": 251,
@@ -73,10 +71,8 @@ test("sample snapshot: physical stock, parcels and no invented bottle usage", ()
     "2026-11-05": 158,
     "2026-11-06": 176,
     "2026-11-07": 164,
-    "2026-11-08": 182,
-    "2026-11-09": 36,
+    "2026-11-08": 190,
   });
-  assert.equal(data.days.find((day) => day.date === "2026-11-09")?.partial, true);
   assert.equal(data.days.find((day) => day.date === "2026-11-09")?.inAverage, false);
 });
 
@@ -91,10 +87,12 @@ test("28 days uses only the days the snapshot actually covers", () => {
   assert.equal(data.averagedDays, 17);
   assert.equal(data.averageStart, "2026-10-23");
   assert.equal(data.averageEnd, "2026-11-08");
-  assert.equal(data.parcelsInAverage, 1718);
+  assert.equal(data.parcelsInAverage, 4473);
+  assert.equal(row(data, "box12")?.used, 3935);
+  assert.equal(row(data, "gember")?.used, 34554);
   assert.ok(data.caveats.includes("short-coverage"));
   const tape = row(data, "tape");
-  assert.ok(Math.abs((tape?.avgPerDay ?? 0) - 1718 / 17) < 1e-9);
+  assert.ok(Math.abs((tape?.avgPerDay ?? 0) - 4473 / 17) < 1e-9);
 });
 
 function catalog() {
@@ -275,4 +273,33 @@ test("orders that share a pickorder but not a tracking code are unknown", () => 
   assert.equal(row(data, "box12")?.used, 0);
   assert.equal(row(data, "tape")?.used, 0);
   assert.equal(row(data, "gember")?.used, 0);
+});
+
+test("blank sku lines are skipped and parcels outside the window are not usage", () => {
+  const ship = "2026-11-06T10:00:00Z";
+  const data = dashboard([
+    {
+      id: 1,
+      status: "COMPLETE",
+      created_at: ship,
+      order_date: "2024-05-01T10:00:00Z",
+      order_items: [
+        { product_sku: "Gember", product_title: "1 fles", quantity_ordered: 6, quantity_canceled: 0, status: "COMPLETE" },
+        { product_sku: null, product_title: null, quantity_ordered: 4, quantity_canceled: 0, status: "COMPLETE" },
+      ],
+      parcels: [parcel("NOW", ship)],
+    },
+    {
+      id: 2,
+      status: "COMPLETE",
+      created_at: "2024-06-01T10:00:00Z",
+      order_date: "2024-06-01T10:00:00Z",
+      order_items: [{ product_sku: "Gember", product_title: "1 fles", quantity_ordered: 20, quantity_canceled: 0, status: "COMPLETE" }],
+      parcels: [parcel("OLD", "2024-06-02T10:00:00Z")],
+    },
+  ]);
+  assert.equal(row(data, "gember")?.used, 6);
+  assert.equal(row(data, "box6")?.used, 1);
+  assert.equal(data.unknown?.total, 0);
+  assert.equal(data.parcelsInAverage, 1);
 });
