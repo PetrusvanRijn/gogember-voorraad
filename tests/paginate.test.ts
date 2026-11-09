@@ -32,3 +32,15 @@ test("a full page without has_next keeps going until the cursor stalls", async (
   );
   assert.equal(all.length, 3);
 });
+
+test("a deadline stops before the first page and keeps the cursor", async () => {
+  const { paginateDetailed } = await import("../lib/paginate");
+  let calls = 0;
+  const result = await paginateDetailed(async () => {
+    calls += 1;
+    return { items: [{ id: 5 }], hasNext: true, nextId: 5 };
+  }, { deadlineMs: Date.now() - 1 });
+  assert.equal(calls, 0);
+  assert.equal(result.complete, false);
+  assert.equal(result.nextId, 1);
+});

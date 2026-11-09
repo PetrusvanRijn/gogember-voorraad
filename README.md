@@ -27,6 +27,9 @@ npm run build
 | `GOGEMBER_STOCKITUP_CLIENT_ID` | live mode | HTTP Basic user. Server-side only. |
 | `GOGEMBER_STOCKITUP_CLIENT_SECRET` | live mode | HTTP Basic password. Server-side only. |
 | `GOGEMBER_STOCKITUP_SELLER_ID` | no | Defaults to `38`. |
+| `BLOB_STORE_ID` | live mode on Vercel | Set when a private Blob store is connected to the project. |
+| `BLOB_READ_WRITE_TOKEN` | live mode locally | Read-write token for that Blob store. Not needed on Vercel when `BLOB_STORE_ID` is set. |
+| `CRON_SECRET` | live mode | Random string. The daily cron sends `Authorization: Bearer <CRON_SECRET>`. |
 
 Never commit real credentials and never expose them to the browser. `.env.local` is gitignored.
 
@@ -39,7 +42,9 @@ Base URL: `https://his.stockitup.nl/api/v1/`
 - `GET /sellers/{id}/products/?page_size=100&id_gt=`
 - `GET /sellers/{id}/orders/?page_size=100&id_gt=&updated_since=`
 
-`updated_since` is milliseconds since the epoch. Pages advance with `id_gt` until a short page comes back. Responses are cached for 15 minutes. Only the order window for the selected period is requested (plus one day of margin).
+`updated_since` is milliseconds since the epoch. Pages advance with `id_gt` (starting at 1) until a short page comes back. A slow page is retried twice. The rendered page is cached for 15 minutes.
+
+Live mode does not download the whole period on every request. One private Blob holds per-day parcel totals. Closed days are fetched once, in chunks. Today and yesterday are refreshed from `updated_since`. A daily cron at 03:15 UTC continues the backfill. Until that history is complete, longer periods say so and only count days that are already stored.
 
 `created_since` is supported by the API but not sent. A parcel shipped this week often belongs to an order placed earlier, and combining both filters would drop it.
 
